@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "spoorcourse",
+  "description": "Adds properties relating to spoor",
+  "$merge": {
+    "type": "merge",
+    "source": { "$ref": "course" },
+    "with": {
+      "properties": {
+        "_latestTrackingId": {
+          "type": "number",
+          "default": -1
+        }
+      }
+    }
+  }
+}
