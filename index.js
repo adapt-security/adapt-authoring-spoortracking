@@ -1,1 +1,1 @@
-module.exports = require('./lib/spoorTrackingModule');
+module.exports = require('./lib/SpoorTrackingModule');
