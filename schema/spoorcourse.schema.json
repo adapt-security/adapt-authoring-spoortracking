@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "spoorcourse",
+  "$anchor": "spoorcourse",
   "description": "Adds properties relating to spoor",
   "$merge": {
     "type": "merge",
