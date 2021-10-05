@@ -4,6 +4,6 @@
   "description": "Module for making course content compatible with spoor",
   "homepage": "https://github.com/adaptlearning/adapt-authoring-spoortracking",
   "license": "GPL-3.0",
-  "repository": "adaptlearning/adapt-authoring-spoortracking",
-  "main": "index.js"
+  "main": "index.js",
+  "repository": "adaptlearning/adapt-authoring-spoortracking"
 }
