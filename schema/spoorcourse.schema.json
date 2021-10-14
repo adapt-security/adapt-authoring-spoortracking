@@ -1,13 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$anchor": "spoorcourse",
-  "description": "Adds properties relating to spoor",
+  "description": "Extra properties related to spoor",
   "$merge": {
     "type": "merge",
     "source": { "$ref": "course" },
     "with": {
       "properties": {
         "_latestTrackingId": {
+          "description": "The most recently set tracking ID",
           "type": "number",
           "default": -1
         }

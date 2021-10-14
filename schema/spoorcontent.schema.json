@@ -1,12 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$anchor": "spoorcontent",
-  "description": "Adds properties relating to spoor",
+  "description": "Extra properties related to spoor",
   "$merge": {
     "type": "merge",
     "source": { "$ref": "content" },
     "with": {
       "properties": {
+        "description": "A unique tracking identifier for the content item",
         "_trackingId": {
           "type": "number"
         }
