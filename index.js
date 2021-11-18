@@ -1,1 +1,1 @@
-module.exports = require('./lib/SpoorTrackingModule');
+export { default } from './lib/SpoorTrackingModule.js';
