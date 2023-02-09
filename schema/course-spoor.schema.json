@@ -1,9 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$anchor": "spoorcourse",
+  "$anchor": "course-spoor",
   "description": "Extra properties related to spoor",
-  "$merge": {
-    "type": "merge",
+  "$patch": {
     "source": { "$ref": "course" },
     "with": {
       "properties": {

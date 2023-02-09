@@ -1,13 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$anchor": "spoorcontent",
+  "$anchor": "block-spoor",
   "description": "Extra properties related to spoor",
-  "$merge": {
-    "type": "merge",
-    "source": { "$ref": "content" },
+  "$patch": {
+    "source": { "$ref": "block" },
     "with": {
       "properties": {
-        "description": "A unique tracking identifier for the content item",
+        "description": "A unique tracking identifier for the block",
         "_trackingId": {
           "type": "number"
         }
