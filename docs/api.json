@@ -2,6 +2,7 @@
   "paths": {
     "/api/spoortracking/reset": {
       "get": {
+        "tags": ["adapt-authoring-spoor"],
         "operationId": "resetCourseTrackingIds",
         "summary": "Reset a course's tracking IDs",
         "responses": {
