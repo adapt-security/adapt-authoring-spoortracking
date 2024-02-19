@@ -7,6 +7,12 @@
   "type": "module",
   "main": "index.js",
   "repository": "github:adaptlearning/adapt-authoring-spoortracking",
+  "peerDependencies": {
+    "adapt-authoring-auth": "github:adapt-security/adapt-authoring-auth",
+    "adapt-authoring-content": "github:adapt-security/adapt-authoring-content",
+    "adapt-authoring-core": "github:adapt-security/adapt-authoring-core",
+    "adapt-authoring-server": "github:adapt-security/adapt-authoring-server"
+  },
   "devDependencies": {
     "eslint": "^8.56.0",
     "standard": "^17.1.0"
