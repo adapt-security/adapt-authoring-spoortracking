@@ -127,17 +127,11 @@ describe('SpoorTrackingModule', () => {
       assert.equal(data._trackingId, 1)
     })
 
-    // TODO: BUG - insertTrackingId crashes when content.find returns an empty array
-    // Destructuring `[{ _trackingId }]` from an empty array gives `undefined`,
-    // causing a TypeError. This happens when a block is the first content item
-    // inserted for a course.
     it('should handle empty find result gracefully', async () => {
       instance._contentMock.find.mock.mockImplementation(async () => [])
       const data = { _type: 'block', _courseId: 'emptyCourse' }
-      await assert.rejects(
-        () => instance.insertTrackingId(data),
-        TypeError
-      )
+      await instance.insertTrackingId(data)
+      assert.equal(data._trackingId, 1)
     })
   })
 
