@@ -7,11 +7,14 @@
   "type": "module",
   "main": "index.js",
   "repository": "github:adapt-security/adapt-authoring-spoortracking",
+  "scripts": {
+    "test": "node --test 'tests/**/*.spec.js'"
+  },
   "dependencies": {
     "adapt-authoring-core": "^1.7.0"
   },
   "peerDependencies": {
-    "adapt-authoring-auth": "^1.0.5",
+    "adapt-authoring-auth": "^1.0.7",
     "adapt-authoring-content": "^1.2.3",
     "adapt-authoring-server": "^1.2.1"
   },
