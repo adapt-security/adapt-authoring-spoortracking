@@ -18,17 +18,6 @@
     "adapt-authoring-content": "^1.2.3",
     "adapt-authoring-server": "^1.2.1"
   },
-  "peerDependenciesMeta": {
-    "adapt-authoring-auth": {
-      "optional": true
-    },
-    "adapt-authoring-content": {
-      "optional": true
-    },
-    "adapt-authoring-server": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@semantic-release/git": "^10.0.1",
     "conventional-changelog-eslint": "^6.0.0",
