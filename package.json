@@ -11,7 +11,7 @@
     "test": "node --test 'tests/**/*.spec.js'"
   },
   "dependencies": {
-    "adapt-authoring-core": "^1.7.0"
+    "adapt-authoring-core": "^2.0.0"
   },
   "peerDependencies": {
     "adapt-authoring-auth": "^1.0.7",
