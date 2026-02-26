@@ -16,7 +16,7 @@
   "peerDependencies": {
     "adapt-authoring-auth": "^2.0.0",
     "adapt-authoring-content": "^2.0.0",
-    "adapt-authoring-server": "^2.0.0"
+    "adapt-authoring-server": "^2.1.0"
   },
   "peerDependenciesMeta": {
     "adapt-authoring-auth": {
