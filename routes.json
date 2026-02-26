@@ -1,0 +1,17 @@
+{
+  "root": "spoortracking",
+  "routes": [
+    {
+      "route": "/reset/:_courseId",
+      "handlers": { "post": "resetTrackingHandler" },
+      "permissions": { "post": ["write:content"] },
+      "meta": {
+        "post": {
+          "summary": "Reset course tracking IDs",
+          "description": "Fully resets all tracking IDs for a single course.",
+          "responses": { "204": {} }
+        }
+      }
+    }
+  ]
+}
