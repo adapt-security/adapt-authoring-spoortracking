@@ -31,6 +31,7 @@
   },
   "devDependencies": {
     "@adaptlearning/semantic-release-config": "^1.0.0",
+    "adapt-authoring-server": "^2.0.0",
     "standard": "^17.1.0"
   },
   "release": {
