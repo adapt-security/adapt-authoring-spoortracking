@@ -3,46 +3,57 @@ import assert from 'node:assert/strict'
 
 import SpoorTrackingModule from '../lib/SpoorTrackingModule.js'
 
+// A valid 24-char hex string so parseObjectId() doesn't throw
+const COURSE_ID = '0123456789abcdef01234567'
+
 /**
- * Creates a mock SpoorTrackingModule instance with stubbed app dependencies.
- * Since SpoorTrackingModule extends AbstractModule and relies on a running
- * application, we construct a plain object with the module's prototype methods
- * and inject mock collaborators.
+ * Builds a chainable cursor mock for collection.find(...).sort(...).limit(...).toArray()
  */
-function createMockInstance (overrides = {}) {
+function makeCursor (docs) {
+  const cursor = {
+    sort: mock.fn(() => cursor),
+    limit: mock.fn(() => cursor),
+    toArray: mock.fn(async () => docs)
+  }
+  return cursor
+}
+
+/**
+ * Creates a mock SpoorTrackingModule instance with stubbed content + mongodb collaborators.
+ * `config` lets each test seed the counter/content collection responses.
+ */
+function createMockInstance (config = {}) {
+  const {
+    counterDoc = null, // result of counters.findOne
+    incResult = { seq: 1 }, // result of counters.findOneAndUpdate
+    maxBlock = [] // docs returned for the findMaxTrackingId lookup
+  } = config
+
+  const countersMock = {
+    findOne: mock.fn(async () => counterDoc),
+    updateOne: mock.fn(async () => ({})),
+    findOneAndUpdate: mock.fn(async () => incResult)
+  }
+  const contentColMock = {
+    find: mock.fn(() => makeCursor(maxBlock)),
+    updateOne: mock.fn(async () => ({}))
+  }
+
   const contentMock = {
-    find: mock.fn(async () => []),
-    update: mock.fn(async () => ({})),
+    collectionName: 'content',
+    counterCollectionName: 'contentcounters',
     preInsertHook: { tap: mock.fn() }
   }
-  const authMock = {
-    secureRoute: mock.fn()
+  const mongodbMock = {
+    getCollection: mock.fn(name => name === 'contentcounters' ? countersMock : contentColMock)
   }
-  const serverMock = {
-    api: {
-      createChildRouter: mock.fn(() => ({
-        addRoute: mock.fn()
-      }))
-    }
-  }
-  const appMock = {
-    waitForModule: mock.fn(async (...names) => {
-      const map = { auth: authMock, content: contentMock, server: serverMock }
-      if (names.length === 1) return map[names[0]]
-      return names.map(n => map[n])
-    })
-  }
-  const logMock = mock.fn()
 
   const instance = Object.create(SpoorTrackingModule.prototype)
-  instance.app = appMock
-  instance.log = logMock
-  instance._contentMock = contentMock
-  instance._authMock = authMock
-  instance._serverMock = serverMock
-  instance._appMock = appMock
-
-  Object.assign(instance, overrides)
+  instance.content = contentMock
+  instance.mongodb = mongodbMock
+  instance.log = mock.fn()
+  instance._counters = countersMock
+  instance._contentCol = contentColMock
   return instance
 }
 
@@ -52,160 +63,121 @@ describe('SpoorTrackingModule', () => {
 
     beforeEach(() => {
       instance = createMockInstance()
+      instance.allocateTrackingIds = mock.fn(async () => [42])
     })
 
     it('should skip non-block types', async () => {
-      const data = { _type: 'component', _courseId: 'course1' }
+      const data = { _type: 'component', _courseId: COURSE_ID }
       await instance.insertTrackingId(data)
-      assert.equal(instance._contentMock.find.mock.callCount(), 0)
+      assert.equal(instance.allocateTrackingIds.mock.callCount(), 0)
       assert.equal(data._trackingId, undefined)
     })
 
-    it('should skip if _trackingId is already an integer', async () => {
-      const data = { _type: 'block', _courseId: 'course1', _trackingId: 5 }
-      await instance.insertTrackingId(data)
-      assert.equal(instance._contentMock.find.mock.callCount(), 0)
+    it('should skip multilang sync inserts (replicas reuse the source id)', async () => {
+      const data = { _type: 'block', _courseId: COURSE_ID, _trackingId: 5 }
+      await instance.insertTrackingId(data, { _multilangSync: true })
+      assert.equal(instance.allocateTrackingIds.mock.callCount(), 0)
       assert.equal(data._trackingId, 5)
     })
 
-    it('should skip if _trackingId is 0 (a valid integer)', async () => {
-      const data = { _type: 'block', _courseId: 'course1', _trackingId: 0 }
+    it('should allocate a tracking id for a block', async () => {
+      const data = { _type: 'block', _courseId: COURSE_ID }
       await instance.insertTrackingId(data)
-      assert.equal(instance._contentMock.find.mock.callCount(), 0)
-      assert.equal(data._trackingId, 0)
+      assert.equal(instance.allocateTrackingIds.mock.callCount(), 1)
+      assert.deepEqual(instance.allocateTrackingIds.mock.calls[0].arguments, [COURSE_ID, 1])
+      assert.equal(data._trackingId, 42)
     })
 
-    it('should assign _trackingId as max + 1 when blocks exist', async () => {
-      instance._contentMock.find.mock.mockImplementation(async () => [{ _trackingId: 10 }])
-      const data = { _type: 'block', _courseId: 'course1' }
+    it('should overwrite an incoming id on a non-sync block insert (e.g. a clone payload)', async () => {
+      const data = { _type: 'block', _courseId: COURSE_ID, _trackingId: 99 }
       await instance.insertTrackingId(data)
-      assert.equal(data._trackingId, 11)
+      assert.equal(data._trackingId, 42)
+    })
+  })
+
+  describe('allocateTrackingIds', () => {
+    it('should return an empty array for count < 1', async () => {
+      const instance = createMockInstance()
+      assert.deepEqual(await instance.allocateTrackingIds(COURSE_ID, 0), [])
+      assert.equal(instance._counters.findOneAndUpdate.mock.callCount(), 0)
     })
 
-    it('should assign _trackingId 1 when existing block has _trackingId 0', async () => {
-      instance._contentMock.find.mock.mockImplementation(async () => [{ _trackingId: 0 }])
-      const data = { _type: 'block', _courseId: 'course1' }
-      await instance.insertTrackingId(data)
-      assert.equal(data._trackingId, 1)
+    it('should seed from the existing max then increment when no counter exists', async () => {
+      const instance = createMockInstance({
+        counterDoc: null,
+        maxBlock: [{ _trackingId: 10 }],
+        incResult: { seq: 11 }
+      })
+      const ids = await instance.allocateTrackingIds(COURSE_ID, 1)
+      const seedCall = instance._counters.updateOne.mock.calls[0]
+      assert.deepEqual(seedCall.arguments[1], { $setOnInsert: { seq: 10 } })
+      assert.deepEqual(seedCall.arguments[2], { upsert: true })
+      assert.deepEqual(ids, [11])
     })
 
-    it('should call content.find with correct query and options', async () => {
-      instance._contentMock.find.mock.mockImplementation(async () => [{ _trackingId: 3 }])
-      const data = { _type: 'block', _courseId: 'courseABC' }
-      await instance.insertTrackingId(data)
-      const call = instance._contentMock.find.mock.calls[0]
-      assert.deepEqual(call.arguments[0], { _courseId: 'courseABC' })
-      assert.deepEqual(call.arguments[1], {})
-      assert.deepEqual(call.arguments[2], { limit: 1, sort: [['_trackingId', -1]] })
+    it('should not seed when a counter already exists', async () => {
+      const instance = createMockInstance({
+        counterDoc: { seq: 5 },
+        incResult: { seq: 8 }
+      })
+      const ids = await instance.allocateTrackingIds(COURSE_ID, 3)
+      assert.equal(instance._counters.updateOne.mock.callCount(), 0)
+      assert.deepEqual(ids, [6, 7, 8])
     })
 
-    it('should not skip when _trackingId is a non-integer number', async () => {
-      instance._contentMock.find.mock.mockImplementation(async () => [{ _trackingId: 5 }])
-      const data = { _type: 'block', _courseId: 'course1', _trackingId: 1.5 }
-      await instance.insertTrackingId(data)
-      assert.equal(data._trackingId, 6)
+    it('should reserve a contiguous range and $inc by count', async () => {
+      const instance = createMockInstance({
+        counterDoc: { seq: 0 },
+        incResult: { seq: 4 }
+      })
+      const ids = await instance.allocateTrackingIds(COURSE_ID, 4)
+      const incCall = instance._counters.findOneAndUpdate.mock.calls[0]
+      assert.deepEqual(incCall.arguments[1], { $inc: { seq: 4 } })
+      assert.deepEqual(incCall.arguments[2], { returnDocument: 'after' })
+      assert.deepEqual(ids, [1, 2, 3, 4])
+    })
+  })
+
+  describe('findMaxTrackingId', () => {
+    it('should return 0 when the course has no blocks', async () => {
+      const instance = createMockInstance({ maxBlock: [] })
+      assert.equal(await instance.findMaxTrackingId(COURSE_ID), 0)
     })
 
-    it('should not skip when _trackingId is a string', async () => {
-      instance._contentMock.find.mock.mockImplementation(async () => [{ _trackingId: 2 }])
-      const data = { _type: 'block', _courseId: 'course1', _trackingId: '5' }
-      await instance.insertTrackingId(data)
-      assert.equal(data._trackingId, 3)
-    })
-
-    it('should use nullish coalescing so undefined _trackingId defaults to 1', async () => {
-      instance._contentMock.find.mock.mockImplementation(async () => [{ _trackingId: undefined }])
-      const data = { _type: 'block', _courseId: 'course1' }
-      await instance.insertTrackingId(data)
-      assert.equal(data._trackingId, 1)
-    })
-
-    it('should handle null _trackingId in result using nullish coalescing', async () => {
-      instance._contentMock.find.mock.mockImplementation(async () => [{ _trackingId: null }])
-      const data = { _type: 'block', _courseId: 'course1' }
-      await instance.insertTrackingId(data)
-      assert.equal(data._trackingId, 1)
-    })
-
-    it('should handle empty find result gracefully', async () => {
-      instance._contentMock.find.mock.mockImplementation(async () => [])
-      const data = { _type: 'block', _courseId: 'emptyCourse' }
-      await instance.insertTrackingId(data)
-      assert.equal(data._trackingId, 1)
+    it('should return the highest tracking id', async () => {
+      const instance = createMockInstance({ maxBlock: [{ _trackingId: 17 }] })
+      assert.equal(await instance.findMaxTrackingId(COURSE_ID), 17)
     })
   })
 
   describe('resetCourseTrackingIds', () => {
-    let instance
+    it('should renumber blocks 1..n and realign the counter', async () => {
+      const instance = createMockInstance()
+      instance._contentCol.find.mock.mockImplementation(() => makeCursor([{ _id: 'b1' }, { _id: 'b2' }, { _id: 'b3' }]))
+      await instance.resetCourseTrackingIds(COURSE_ID)
 
-    beforeEach(() => {
-      instance = createMockInstance()
-    })
-
-    it('should reassign sequential _trackingId values starting from 1', async () => {
-      const blocks = [
-        { _id: 'b1', _trackingId: 5 },
-        { _id: 'b2', _trackingId: 12 },
-        { _id: 'b3', _trackingId: 20 }
-      ]
-      instance._contentMock.find.mock.mockImplementation(async () => blocks)
-      await instance.resetCourseTrackingIds('course1')
-
-      const updateCalls = instance._contentMock.update.mock.calls
-      assert.equal(updateCalls.length, 3)
-      assert.deepEqual(updateCalls[0].arguments, [{ _id: 'b1' }, { _trackingId: 1 }, { schemaName: 'block' }])
-      assert.deepEqual(updateCalls[1].arguments, [{ _id: 'b2' }, { _trackingId: 2 }, { schemaName: 'block' }])
-      assert.deepEqual(updateCalls[2].arguments, [{ _id: 'b3' }, { _trackingId: 3 }, { schemaName: 'block' }])
-    })
-
-    it('should query for blocks sorted by _trackingId ascending', async () => {
-      instance._contentMock.find.mock.mockImplementation(async () => [])
-      await instance.resetCourseTrackingIds('courseXYZ')
-
-      const call = instance._contentMock.find.mock.calls[0]
-      assert.deepEqual(call.arguments[0], { _type: 'block', _courseId: 'courseXYZ' })
-      assert.deepEqual(call.arguments[1], {})
-      assert.deepEqual(call.arguments[2], { sort: [['_trackingId', 1]] })
-    })
-
-    it('should do nothing when no blocks are found', async () => {
-      instance._contentMock.find.mock.mockImplementation(async () => [])
-      await instance.resetCourseTrackingIds('emptyCourse')
-      assert.equal(instance._contentMock.update.mock.callCount(), 0)
-    })
-
-    it('should log a debug message after resetting', async () => {
-      instance._contentMock.find.mock.mockImplementation(async () => [])
-      await instance.resetCourseTrackingIds('course1')
+      const updates = instance._contentCol.updateOne.mock.calls
+      assert.equal(updates.length, 3)
+      assert.deepEqual(updates[0].arguments, [{ _id: 'b1' }, { $set: { _trackingId: 1 } }])
+      assert.deepEqual(updates[1].arguments, [{ _id: 'b2' }, { $set: { _trackingId: 2 } }])
+      assert.deepEqual(updates[2].arguments, [{ _id: 'b3' }, { $set: { _trackingId: 3 } }])
+      const counterUpdate = instance._counters.updateOne.mock.calls[0]
+      assert.deepEqual(counterUpdate.arguments[1], { $set: { seq: 3 } })
       assert.equal(instance.log.mock.callCount(), 1)
-      assert.deepEqual(instance.log.mock.calls[0].arguments, ['debug', 'RESET', 'course1'])
     })
 
-    it('should handle a single block', async () => {
-      const blocks = [{ _id: 'b1', _trackingId: 99 }]
-      instance._contentMock.find.mock.mockImplementation(async () => blocks)
-      await instance.resetCourseTrackingIds('course1')
-
-      const updateCalls = instance._contentMock.update.mock.calls
-      assert.equal(updateCalls.length, 1)
-      assert.deepEqual(updateCalls[0].arguments, [{ _id: 'b1' }, { _trackingId: 1 }, { schemaName: 'block' }])
+    it('should do nothing to blocks when none are found', async () => {
+      const instance = createMockInstance()
+      instance._contentCol.find.mock.mockImplementation(() => makeCursor([]))
+      await instance.resetCourseTrackingIds(COURSE_ID)
+      assert.equal(instance._contentCol.updateOne.mock.callCount(), 0)
+      assert.deepEqual(instance._counters.updateOne.mock.calls[0].arguments[1], { $set: { seq: 0 } })
     })
 
-    it('should propagate errors from content.find', async () => {
-      instance._contentMock.find.mock.mockImplementation(async () => { throw new Error('db error') })
-      await assert.rejects(
-        () => instance.resetCourseTrackingIds('course1'),
-        { message: 'db error' }
-      )
-    })
-
-    it('should propagate errors from content.update', async () => {
-      instance._contentMock.find.mock.mockImplementation(async () => [{ _id: 'b1', _trackingId: 1 }])
-      instance._contentMock.update.mock.mockImplementation(async () => { throw new Error('update failed') })
-      await assert.rejects(
-        () => instance.resetCourseTrackingIds('course1'),
-        { message: 'update failed' }
-      )
+    it('should propagate errors', async () => {
+      const instance = createMockInstance()
+      instance._contentCol.find.mock.mockImplementation(() => { throw new Error('db error') })
+      await assert.rejects(() => instance.resetCourseTrackingIds(COURSE_ID), { message: 'db error' })
     })
   })
 
@@ -214,54 +186,35 @@ describe('SpoorTrackingModule', () => {
 
     beforeEach(() => {
       instance = createMockInstance()
+      instance.resetCourseTrackingIds = mock.fn(async () => {})
     })
 
-    it('should call resetCourseTrackingIds with the courseId from params', async () => {
-      instance._contentMock.find.mock.mockImplementation(async () => [])
-      const req = { params: { _courseId: 'course123' } }
+    it('should reset using the courseId param and send 204', async () => {
+      const req = { params: { _courseId: COURSE_ID } }
       const res = { sendStatus: mock.fn() }
       const next = mock.fn()
-
       await instance.resetTrackingHandler(req, res, next)
-
-      const findCall = instance._contentMock.find.mock.calls[0]
-      assert.deepEqual(findCall.arguments[0], { _type: 'block', _courseId: 'course123' })
-    })
-
-    it('should send 204 on success', async () => {
-      instance._contentMock.find.mock.mockImplementation(async () => [])
-      const req = { params: { _courseId: 'course1' } }
-      const res = { sendStatus: mock.fn() }
-      const next = mock.fn()
-
-      await instance.resetTrackingHandler(req, res, next)
-
-      assert.equal(res.sendStatus.mock.callCount(), 1)
+      assert.deepEqual(instance.resetCourseTrackingIds.mock.calls[0].arguments, [COURSE_ID])
       assert.deepEqual(res.sendStatus.mock.calls[0].arguments, [204])
       assert.equal(next.mock.callCount(), 0)
     })
 
-    it('should call next with error on failure', async () => {
-      instance._contentMock.find.mock.mockImplementation(async () => { throw new Error('fail') })
-      const req = { params: { _courseId: 'course1' } }
+    it('should call next with the error on failure', async () => {
+      instance.resetCourseTrackingIds = mock.fn(async () => { throw new Error('fail') })
+      const req = { params: { _courseId: COURSE_ID } }
       const res = { sendStatus: mock.fn() }
       const next = mock.fn()
-
       await instance.resetTrackingHandler(req, res, next)
-
-      assert.equal(next.mock.callCount(), 1)
       assert.equal(next.mock.calls[0].arguments[0].message, 'fail')
       assert.equal(res.sendStatus.mock.callCount(), 0)
     })
   })
 
   describe('class structure', () => {
-    it('should export a class', () => {
+    it('should export a class with the expected methods', () => {
       assert.equal(typeof SpoorTrackingModule, 'function')
-      assert.equal(typeof SpoorTrackingModule.prototype.init, 'function')
-      assert.equal(typeof SpoorTrackingModule.prototype.insertTrackingId, 'function')
-      assert.equal(typeof SpoorTrackingModule.prototype.resetCourseTrackingIds, 'function')
-      assert.equal(typeof SpoorTrackingModule.prototype.resetTrackingHandler, 'function')
+      ;['init', 'insertTrackingId', 'allocateTrackingIds', 'findMaxTrackingId', 'resetCourseTrackingIds', 'resetTrackingHandler']
+        .forEach(m => assert.equal(typeof SpoorTrackingModule.prototype[m], 'function'))
     })
   })
 })
