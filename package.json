@@ -16,6 +16,7 @@
   "peerDependencies": {
     "adapt-authoring-auth": "^2.0.0",
     "adapt-authoring-content": "^3.0.0",
+    "adapt-authoring-mongodb": "^3.0.0",
     "adapt-authoring-server": "^2.0.0"
   },
   "peerDependenciesMeta": {
@@ -23,6 +24,9 @@
       "optional": true
     },
     "adapt-authoring-content": {
+      "optional": true
+    },
+    "adapt-authoring-mongodb": {
       "optional": true
     },
     "adapt-authoring-server": {
