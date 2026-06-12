@@ -1,0 +1,9 @@
+{
+  "MISSING_TRACKING_IDS": {
+    "data": {
+      "blocks": "The blocks missing a tracking ID"
+    },
+    "description": "Course cannot be built: SCORM tracking is enabled but one or more blocks have no tracking ID",
+    "statusCode": 400
+  }
+}

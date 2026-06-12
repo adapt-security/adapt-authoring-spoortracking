@@ -26,7 +26,8 @@ function createMockInstance (config = {}) {
   const {
     counterDoc = null, // result of counters.findOne
     incResult = { seq: 1 }, // result of counters.findOneAndUpdate
-    maxBlock = [] // docs returned for the findMaxTrackingId lookup
+    maxBlock = [], // docs returned for the findMaxTrackingId lookup
+    configDoc = null // result of content.findOne for the course config
   } = config
 
   const countersMock = {
@@ -36,6 +37,7 @@ function createMockInstance (config = {}) {
   }
   const contentColMock = {
     find: mock.fn(() => makeCursor(maxBlock)),
+    findOne: mock.fn(async () => configDoc),
     updateOne: mock.fn(async () => ({}))
   }
 
@@ -52,6 +54,13 @@ function createMockInstance (config = {}) {
   instance.content = contentMock
   instance.mongodb = mongodbMock
   instance.log = mock.fn()
+  instance.app = {
+    errors: {
+      MISSING_TRACKING_IDS: {
+        setData: data => Object.assign(new Error('MISSING_TRACKING_IDS'), { code: 'MISSING_TRACKING_IDS', data })
+      }
+    }
+  }
   instance._counters = countersMock
   instance._contentCol = contentColMock
   return instance
@@ -210,10 +219,52 @@ describe('SpoorTrackingModule', () => {
     })
   })
 
+  describe('enforceTrackingIds', () => {
+    const build = { courseId: COURSE_ID }
+
+    it('should do nothing when tracking is not enabled', async () => {
+      const instance = createMockInstance({ configDoc: { _spoor: { _isEnabled: false } } })
+      // even if blocks were untracked, the find should never run
+      instance._contentCol.find.mock.mockImplementation(() => makeCursor([{ _id: 'b1' }]))
+      await instance.enforceTrackingIds(build)
+      assert.equal(instance._contentCol.find.mock.callCount(), 0)
+    })
+
+    it('should do nothing when there is no config', async () => {
+      const instance = createMockInstance({ configDoc: null })
+      await instance.enforceTrackingIds(build)
+      assert.equal(instance._contentCol.find.mock.callCount(), 0)
+    })
+
+    it('should pass when tracking is enabled and every block has a tracking id', async () => {
+      const instance = createMockInstance({ configDoc: { _spoor: { _isEnabled: true } } })
+      instance._contentCol.find.mock.mockImplementation(() => makeCursor([]))
+      await instance.enforceTrackingIds(build) // resolves without throwing
+      const query = instance._contentCol.find.mock.calls[0].arguments[0]
+      assert.deepEqual(query._trackingId, { $not: { $type: 'number' } })
+    })
+
+    it('should throw MISSING_TRACKING_IDS listing the untracked blocks', async () => {
+      const instance = createMockInstance({ configDoc: { _spoor: { _isEnabled: true } } })
+      instance._contentCol.find.mock.mockImplementation(() => makeCursor([
+        { _id: { toString: () => 'b1' }, title: 'Intro' },
+        { _id: { toString: () => 'b2' }, title: 'Outro' }
+      ]))
+      await assert.rejects(() => instance.enforceTrackingIds(build), err => {
+        assert.equal(err.code, 'MISSING_TRACKING_IDS')
+        assert.deepEqual(err.data.blocks, [
+          { _id: 'b1', title: 'Intro' },
+          { _id: 'b2', title: 'Outro' }
+        ])
+        return true
+      })
+    })
+  })
+
   describe('class structure', () => {
     it('should export a class with the expected methods', () => {
       assert.equal(typeof SpoorTrackingModule, 'function')
-      ;['init', 'insertTrackingId', 'allocateTrackingIds', 'findMaxTrackingId', 'resetCourseTrackingIds', 'resetTrackingHandler']
+      ;['init', 'insertTrackingId', 'enforceTrackingIds', 'allocateTrackingIds', 'findMaxTrackingId', 'resetCourseTrackingIds', 'resetTrackingHandler']
         .forEach(m => assert.equal(typeof SpoorTrackingModule.prototype[m], 'function'))
     })
   })
